@@ -18,18 +18,18 @@ const colors = {
 };
 
 function log(color, message) {
-  console.log(${colors[color]});
+  console.log(`${colors[color]}${message}${colors.nc}`);
 }
 
 function formatError(error) {
   const location = error.instancePath || '/';
   const rule = error.keyword === 'required'
-    ? equired property ''
+    ? `required property '${error.params.missingProperty}'`
     : error.keyword;
   const expected = error.keyword === 'enum'
-    ?  Allowed values: .
+    ? `Allowed values: ${error.params.allowedValues.join(', ')}`
     : '';
-  return ${location}:  - .;
+  return `${location}: ${rule}${expected ? ` - ${expected}` : ''}`;
 }
 
 function loadValidator() {
@@ -79,12 +79,19 @@ function getCrateName(cargoTomlPath) {
   return match ? match[1] : null;
 }
 
+function parseJsonFile(filePath) {
+  const buffer = fs.readFileSync(filePath);
+  const encoding = buffer[0] === 0xff && buffer[1] === 0xfe ? 'utf16le' : 'utf8';
+  const content = buffer.toString(encoding).replace(/^\uFEFF/, '');
+  return JSON.parse(content);
+}
+
 function validateManifest(manifestPath, validate) {
   let data;
   try {
-    data = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    data = parseJsonFile(manifestPath);
   } catch (error) {
-    return { valid: false, errors: [/: parse error - ] };
+    return { valid: false, errors: [`JSON parse error: ${error.message}`] };
   }
 
   if (validate(data)) {
@@ -110,7 +117,7 @@ function run() {
   try {
     validate = loadValidator();
   } catch (error) {
-    log('red', Failed to load manifest schema: );
+    log('red', `Failed to load manifest schema: ${error.message}`);
     return 1;
   }
 
@@ -121,14 +128,14 @@ function run() {
     const result = validateManifest(manifestPath, validate);
     const displayPath = path.relative(process.cwd(), manifestPath);
     console.log('');
-    log('blue', Validating ...);
+    log('blue', `Validating ${displayPath}...`);
     if (result.valid) {
       log('green', 'Schema validation passed');
       validCount += 1;
     } else {
       log('red', 'Schema validation failed');
       for (const error of result.errors) {
-        log('red',   );
+        log('red', `  ${error}`);
       }
     }
   }
@@ -141,26 +148,28 @@ function run() {
   for (const dir of deployableDirs) {
     const crateName = getCrateName(path.join(dir, 'Cargo.toml'));
     if (!crateName) continue;
+    const manifestCrateNames = [crateName, crateName.replace(/^soroban-/, '')]
+      .map(name => name.replace(/_/g, '-'));
     const hasManifest = manifestPaths.some(m => {
         const basename = path.basename(m);
-        return basename.includes(crateName) || basename.includes(crateName.replace(/_/g, '-'));
+        return manifestCrateNames.some(name => basename.includes(name));
     });
     if (!hasManifest) {
-      log('red', Deployable crate '' at  is missing a manifest.);
+      log('red', `Deployable crate '${crateName}' at ${dir} is missing a manifest.`);
       missing++;
     }
   }
 
   console.log('');
-  log('blue', Total manifests: );
-  log('green', Valid manifests: );
+  log('blue', `Total manifests: ${manifestPaths.length}`);
+  log('green', `Valid manifests: ${validCount}`);
   if (invalidCount > 0) {
-    log('red', Invalid manifests: );
+    log('red', `Invalid manifests: ${invalidCount}`);
     return 1;
   }
   
   if (missing > 0) {
-    log('red', Missing manifests for  deployable crate(s).);
+    log('red', `Missing manifests for ${missing} deployable crate(s).`);
     return 1;
   }
 
