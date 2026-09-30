@@ -63,8 +63,7 @@ function findDeployableCrates(dir) {
     } else if (entry.isFile() && entry.name === 'Cargo.toml') {
       const content = fs.readFileSync(entryPath, 'utf8');
       const hasCdylib = content.includes('crate-type') && content.includes('"cdylib"');
-      // Some deployable crates in soroban/contracts might not explicitly have cdylib but are required by spec
-      const isSorobanContract = entryPath.replace(/\\\\/g, '/').includes('soroban/contracts/');
+      const isSorobanContract = entryPath.replace(/\\/g, '/').includes('soroban/contracts/');
       if (hasCdylib || isSorobanContract) {
         crates.push(dir);
       }
@@ -141,8 +140,8 @@ function run() {
   }
 
   const invalidCount = manifestPaths.length - validCount;
-  
-  // Ensure every deployable crate has a manifest
+
+  // Ensure every deployable crate has a manifest.
   const deployableDirs = findDeployableCrates(projectRoot);
   let missing = 0;
   for (const dir of deployableDirs) {
@@ -167,7 +166,7 @@ function run() {
     log('red', `Invalid manifests: ${invalidCount}`);
     return 1;
   }
-  
+
   if (missing > 0) {
     log('red', `Missing manifests for ${missing} deployable crate(s).`);
     return 1;

@@ -27,6 +27,10 @@ use crate::event_payload_fixtures::{
     EventPayloadFixture, EVENT_ENUM_FIXTURES, EVENT_PAYLOAD_FIXTURES, FIXTURE_EVENT_VERSION,
 };
 use crate::events::EVENT_VERSION_V2;
+// The lib is `no_std` for wasm, but its test build links `std` (this module
+// already uses `std::string::String` / `std::vec::Vec`). `str::to_string`
+// needs its trait in scope, which a bare test build does not pull in.
+use std::string::ToString;
 
 fn clean_type(t: &str) -> std::string::String {
     let mut out = std::string::String::new();
@@ -52,13 +56,38 @@ fn clean_type(t: &str) -> std::string::String {
     out
 }
 
+/// Returns a valid UTF-8 boundary no more than `bytes` before `end`.
+/// The parser uses byte offsets, while `events.rs` documentation contains
+/// multi-byte Unicode box drawing characters.
+fn lookback_boundary(src: &str, end: usize, bytes: usize) -> usize {
+    let mut start = end.saturating_sub(bytes);
+    while start > 0 && !src.is_char_boundary(start) {
+        start -= 1;
+    }
+    start
+}
+
 fn parse_contracttype_structs(src: &str) -> std::vec::Vec<(std::string::String, std::vec::Vec<(std::string::String, std::string::String)>)> {
     let bytes = src.as_bytes();
     let mut out = std::vec::Vec::new();
     let mut search_from = 0usize;
     while let Some(rel) = src[search_from..].find("pub struct ") {
         let abs = search_from + rel;
-        let lookback_start = abs.saturating_sub(300);
+        let lookback_start = lookback_boundary(src, abs, 300);
+        let mut lookback_start = abs.saturating_sub(300);
+        while lookback_start > 0 && !src.is_char_boundary(lookback_start) {
+            lookback_start -= 1;
+        }
+        // Compute lookback_start at a char boundary by walking backward from `abs`.
+        let lookback_start = {
+            let raw = abs.saturating_sub(300);
+            // Advance forward until we're on a char boundary.
+            let mut pos = raw;
+            while pos < abs && !src.is_char_boundary(pos) {
+                pos += 1;
+            }
+            pos
+        };
         if !src[lookback_start..abs].contains("#[contracttype]") {
             search_from = abs + 11;
             continue;
@@ -123,7 +152,20 @@ fn parse_contracttype_enums(src: &str) -> std::vec::Vec<(std::string::String, st
     let mut search_from = 0usize;
     while let Some(rel) = src[search_from..].find("pub enum ") {
         let abs = search_from + rel;
-        let lookback_start = abs.saturating_sub(300);
+        let lookback_start = lookback_boundary(src, abs, 300);
+        let mut lookback_start = abs.saturating_sub(300);
+        while lookback_start > 0 && !src.is_char_boundary(lookback_start) {
+            lookback_start -= 1;
+        }
+        // Compute lookback_start at a char boundary by walking backward from `abs`.
+        let lookback_start = {
+            let raw = abs.saturating_sub(300);
+            let mut pos = raw;
+            while pos < abs && !src.is_char_boundary(pos) {
+                pos += 1;
+            }
+            pos
+        };
         if !src[lookback_start..abs].contains("#[contracttype]") {
             search_from = abs + 9;
             continue;

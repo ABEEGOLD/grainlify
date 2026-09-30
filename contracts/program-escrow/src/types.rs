@@ -4,11 +4,11 @@
 //! Extracted from `lib.rs` to keep the root module focused on the
 //! `#[contractimpl]` block while preserving the exact same public API.
 
-use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{contracterror, contracttype, symbol_short, vec, Address, Env, String, Symbol, Vec};
 use grainlify_core::CorrelationId;
 
-
-// Event types
+// Event topics and registry key shared by the contract implementation.
+// These were inadvertently dropped while resolving the split-types merge.
 pub const PROGRAM_INITIALIZED: Symbol = symbol_short!("PrgInit");
 pub const FUNDS_LOCKED: Symbol = symbol_short!("FndsLock");
 pub const BATCH_FUNDS_LOCKED: Symbol = symbol_short!("BatLck");
@@ -37,6 +37,8 @@ pub const CONTROLLER_ACCEPTED: Symbol = symbol_short!("CtrlAcc");
 pub const CONTROLLER_ROTATION_CANCELLED: Symbol = symbol_short!("CtrlCanc");
 pub const PRICE_UPDATED: Symbol = symbol_short!("PriceUpd");
 pub const DYNAMIC_PRICING_CONFIG_UPDATED: Symbol = symbol_short!("DynPricCg");
+
+
 
 // Storage keys
 pub const PROGRAM_DATA: Symbol = symbol_short!("ProgData");
@@ -1925,6 +1927,20 @@ pub enum BatchError {
     BatchTooLarge = 410,
 }
 
+/// Maximum number of elements in a single batch call.
+///
+/// Enforced on every batch entry point: `batch_initialize_programs`,
+/// `batch_lock`, `batch_release`, `batch_payout` and its variants. An empty or
+/// oversized batch is rejected before any element is touched — with
+/// `BatchError::InvalidBatchSizeProgram` on the first three and
+/// `BatchError::BatchTooLarge` (410) on the payout family — so a rejected batch
+/// never partially applies.
+///
+/// 100 is calibrated against Soroban's 100 M instruction per-invocation ceiling.
+/// That margin is real but not large: a full 100-item `batch_initialize_programs`
+/// measures ~69.7 M instructions host-side. See
+/// `docs/batch-failure-semantics.md` and
+/// `docs/program-escrow-batch-init-atomicity.md`.
 pub const MAX_BATCH_SIZE: u32 = 100;
 pub const DEFAULT_MAX_HISTORY_PAGE_LIMIT: u32 = 200;
 
@@ -1995,7 +2011,8 @@ pub fn get_program_dependencies_internal(env: &Env, program_id: &String) -> soro
     env.storage()
         .instance()
         .get(&DataKey::ProgramDependencies(program_id.clone()))
-        .unwrap_or(Vec::new(env))
+        .unwrap_or_else(|| Vec::new(env))
+        .unwrap_or(soroban_sdk::Vec::new(env))
 }
 
 pub fn dependency_status_internal(env: &Env, dependency_id: &String) -> DependencyStatus {
